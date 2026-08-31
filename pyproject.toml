@@ -6,5 +6,7 @@ dependencies = [
     "fastapi",
     "httpx",
     "psycopg",
-    "python-dotenv"
+    "python-dotenv",
+    "qdrant-client",
+    "pgvector"
 ]
