@@ -392,18 +392,9 @@ def _redigir_intencao(pergunta: str, dados: dict, fallback: str) -> str:
 # ---- busca (RAG + API estruturada) ------------------------------------------
 
 def _recuperar(pergunta: str, filtros: dict) -> list[dict]:
-    """prioriza o índice quando há filtros estruturados (partido/uf/ano/tipo) —
-    perguntas abertas e autor preferem a API estruturada (autoridade, todos os anos)."""
+    """prioriza o índice vetorial (RAG) quando configurado, com fallback para API estruturada."""
     if filtros.get("id_autor"):
         return _buscar_api(pergunta, filtros)
-    tem_estruturado = bool(
-        filtros.get("partido") or filtros.get("uf") or filtros.get("sigla_tipo")
-        or filtros.get("anos") or filtros.get("numero")
-    )
-    if not tem_estruturado:
-        docs = _buscar_api(pergunta, filtros)
-        if docs:
-            return docs
     if config.tem_rag:
         for modo in (rag.buscar, rag.busca_texto):
             try:
