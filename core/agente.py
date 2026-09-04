@@ -396,15 +396,22 @@ def _recuperar(pergunta: str, filtros: dict) -> list[dict]:
     if filtros.get("id_autor"):
         return _buscar_api(pergunta, filtros)
     if config.tem_rag:
-        for modo_name, modo in [("vetorial", rag.buscar), ("texto", rag.busca_texto)]:
-            try:
-                docs = modo(pergunta or "", filtros)
-            except Exception as e:
-                import sys
-                print(f"RAG {modo_name} failed: {e}", file=sys.stderr)
-                docs = []
-            if docs:
-                return docs
+        try:
+            docs = rag.buscar(pergunta or "", filtros)
+        except Exception as e:
+            import sys
+            print(f"RAG vetorial failed: {e}", file=sys.stderr)
+            docs = []
+        if docs:
+            return docs
+        try:
+            docs = rag.busca_texto(filtros, pergunta or "")
+        except Exception as e:
+            import sys
+            print(f"RAG texto failed: {e}", file=sys.stderr)
+            docs = []
+        if docs:
+            return docs
     return _buscar_api(pergunta, filtros)
 
 

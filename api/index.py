@@ -11,7 +11,14 @@ from fastapi.responses import JSONResponse
 from core import agente, camara, rag
 from core.config import config
 
-app = FastAPI(title="Simplifica Legislativo", version="3.0.0")
+app = FastAPI(
+    title="Simplifica Legislativo",
+    version="3.0.0",
+    description="API para consulta e análise de proposições legislativas usando RAG",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
+)
 
 app.add_middleware(
     CORSMiddleware,
