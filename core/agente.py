@@ -397,18 +397,24 @@ def _recuperar(pergunta: str, filtros: dict) -> list[dict]:
         return _buscar_api(pergunta, filtros)
     if config.tem_rag:
         try:
+            import sys
+            import traceback
             docs = rag.buscar(pergunta or "", filtros)
         except Exception as e:
             import sys
             print(f"RAG vetorial failed: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             docs = []
         if docs:
             return docs
         try:
+            import sys
+            import traceback
             docs = rag.busca_texto(filtros, pergunta or "")
         except Exception as e:
             import sys
             print(f"RAG texto failed: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             docs = []
         if docs:
             return docs
