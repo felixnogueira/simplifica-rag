@@ -5,6 +5,7 @@ schema no banco (vector(768)). Se algum provedor devolver outra dimensão, a
 ingestão falha alto — não muda as tabelas.
 """
 
+from typing import Callable
 import httpx
 
 from .config import config
@@ -150,7 +151,7 @@ def _provedor_embed(fatia: list[str]) -> tuple[str | None, list[list[float] | No
     return None, [None] * len(fatia)
 
 
-def gerar_embeddings_lote(textos: list[str], progresso: callable | None = None) -> list[list[float] | None]:
+def gerar_embeddings_lote(textos: list[str], progresso: Callable | None = None) -> list[list[float] | None]:
     """embeddings em lotes, tentando cada provedor da cadeia; None = falhou em todos."""
     if not _provedores():
         raise EmbeddingsError(
