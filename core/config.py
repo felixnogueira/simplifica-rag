@@ -10,6 +10,8 @@ class Config:
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     opencode_zen_api_key: str = os.getenv("OPENCODE_ZEN_API_KEY", "")
     ollama_url: str = os.getenv("OLLAMA_URL", "")
+    ollama_username: str = os.getenv("OLLAMA_USERNAME", "")
+    ollama_password: str = os.getenv("OLLAMA_PASSWORD", "")
     ollama_chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "qwen3:8b")
     workers_ai_url: str = os.getenv("WORKERS_AI_URL", "")
     workers_ai_model: str = os.getenv("WORKERS_AI_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8")

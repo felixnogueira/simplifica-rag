@@ -80,10 +80,17 @@ def _ollama_batch(textos: list[str]) -> list[list[float] | None]:
     if base.endswith("/v1"):
         base = base[:-3]
     try:
+        # Adicionar autenticação se configurada
+        auth = None
+        if config.ollama_username and config.ollama_password:
+            from httpx import BasicAuth
+            auth = BasicAuth(config.ollama_username, config.ollama_password)
+        
         with httpx.Client(timeout=120) as c:
             r = c.post(
                 f"{base}/api/embed",
                 json={"model": config.ollama_embedding_model, "input": textos},
+                auth=auth
             )
         if r.status_code != 200:
             raise EmbeddingsError(f"ollama respondeu {r.status_code}: {r.text[:200]}")

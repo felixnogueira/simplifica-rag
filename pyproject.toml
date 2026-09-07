@@ -8,5 +8,6 @@ dependencies = [
     "psycopg",
     "python-dotenv",
     "qdrant-client",
-    "pgvector"
+    "pgvector",
+    "uvicorn[standard]>=0.53.0",
 ]
