@@ -86,7 +86,9 @@ def _ollama_batch(textos: list[str]) -> list[list[float] | None]:
             from httpx import BasicAuth
             auth = BasicAuth(config.ollama_username, config.ollama_password)
         
-        with httpx.Client(timeout=120) as c:
+        # Timeout mais generoso para servidor remoto
+        timeout = httpx.Timeout(300.0, connect=30.0)
+        with httpx.Client(timeout=timeout) as c:
             r = c.post(
                 f"{base}/api/embed",
                 json={"model": config.ollama_embedding_model, "input": textos},
