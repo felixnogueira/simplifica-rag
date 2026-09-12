@@ -190,3 +190,18 @@ def gerar_embedding(texto: str) -> list[float]:
     if not res or res[0] is None:
         raise EmbeddingsError("embedding falhou em todos os provedores disponíveis")
     return res[0]
+
+
+def diagnosticar() -> dict:
+    """roda um embedding de teste em cada provedor da cadeia e devolve o resultado (sem lançar)."""
+    resultado = {}
+    for p in _provedores():
+        try:
+            emb = _EMBED_FN[p](["teste"])
+            ok = bool(emb and emb[0])
+            resultado[p] = {"ok": ok, "dims": len(emb[0]) if ok else None}
+        except EmbeddingsError as e:
+            resultado[p] = {"ok": False, "erro": str(e)}
+        except Exception as e:
+            resultado[p] = {"ok": False, "erro": f"{type(e).__name__}: {e}"}
+    return resultado

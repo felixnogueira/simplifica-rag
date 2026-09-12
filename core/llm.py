@@ -22,16 +22,22 @@ class LmClient:
               tentativas: int = 3) -> dict:
         from .config import config
 
+        basic_auth = (
+            httpx.BasicAuth(config.ollama_username or "", config.ollama_password or "")
+            if auth == "basic"
+            else None
+        )
         headers = (
             {"x-goog-api-key": api_key}
             if auth == "x-goog-api-key"
-            else {"Authorization": f"Bearer {api_key}"}
+            else ({} if auth == "basic" else {"Authorization": f"Bearer {api_key}"})
         )
         ultimo_erro = None
         for n in range(tentativas):
             try:
                 with httpx.Client(
-                    timeout=httpx.Timeout(config.llm_timeout, connect=config.llm_connect_timeout)
+                    timeout=httpx.Timeout(config.llm_timeout, connect=config.llm_connect_timeout),
+                    auth=basic_auth,
                 ) as client:
                     r = client.post(url, json=payload, headers=headers)
                 if r.status_code in (429, 500, 502, 503, 504):
@@ -92,25 +98,30 @@ class LmClient:
         providers = [
             (f"{config.ollama_url}/chat/completions",
              "ollama-local" if config.ollama_url else "",
-             dict(base_payload, model=config.ollama_chat_model)),
+             dict(base_payload, model=config.ollama_chat_model),
+             "basic"),
             (f"{config.workers_ai_url}/v1/chat/completions",
              "workers-ai-local" if config.workers_ai_url else "",
-             dict(base_payload, model=config.workers_ai_model)),
+             dict(base_payload, model=config.workers_ai_model),
+             "bearer"),
             (f"{self.zen_base}/chat/completions", self._apikey_zen(),
-             dict(base_payload, model=config.opencode_chat_model)),
+             dict(base_payload, model=config.opencode_chat_model),
+             "bearer"),
             (f"{openai_compat}/chat/completions", self._apikey_gemini(),
-             dict(base_payload, model=model or config.chat_model)),
+             dict(base_payload, model=model or config.chat_model),
+             "x-goog-api-key"),
             (f"{self.groq_base}/chat/completions", self._apikey_groq(),
-             dict(base_payload, model=config.groq_chat_model)),
+             dict(base_payload, model=config.groq_chat_model),
+             "bearer"),
         ]
         def _varredura() -> tuple[dict | None, list[str], Exception | None]:
             falhas: list[str] = []
             ult_falha: Exception | None = None
-            for url, _apikey, payload in providers:
+            for url, _apikey, payload, esquema_auth in providers:
                 if not url or not _apikey:
                     continue
                 try:
-                    mensagem = self._post(url, _apikey, payload)
+                    mensagem = self._post(url, _apikey, payload, auth=esquema_auth)
                     return mensagem["choices"][0]["message"], [], None
                 except Exception as e:
                     ult_falha = e

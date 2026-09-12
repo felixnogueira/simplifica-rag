@@ -5,3 +5,5 @@ __pycache__/
 dump/
 .vercel/
 dados/
+.vercel
+.env*

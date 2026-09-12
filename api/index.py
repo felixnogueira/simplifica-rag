@@ -8,7 +8,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import agente, camara, rag
+from core import agente, camara, embeddings, rag
 from core.config import config
 
 app = FastAPI(
@@ -59,13 +59,30 @@ def health() -> dict:
 
 
 @app.get("/api/rag/status")
-def rag_status():
-    return {
+def rag_status(probe: bool = Query(default=False)):
+    out = {
         "disponivel": bool(config.tem_rag),
         "indice": rag.status(),
         "modelo_embedding": config.embedding_model,
+        "provedor_embedding": config.embedding_provider,
+        "fallbacks": config.embedding_fallbacks,
+        "cadeia_embeddings": embeddings.quantidade_ok(),
+        "ollama_url": _origem(config.ollama_url),
         "ano_vigente": date.today().year,
     }
+    if probe:
+        out["prova_embeddings"] = embeddings.diagnosticar()
+    return out
+
+
+def _origem(url: str) -> str | None:
+    """origem de uma url sem expor credenciais nem caminho."""
+    if not url:
+        return None
+    from urllib.parse import urlparse
+
+    u = urlparse(url)
+    return f"{u.scheme}://{u.hostname}" + (f":{u.port}" if u.port else "")
 
 
 @app.get("/api/filtros")
