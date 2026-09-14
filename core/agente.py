@@ -73,7 +73,23 @@ REGRAS OBRIGATÓRIAS (nunca as quebre):
 
 6. Se o contexto não contiver o que foi pedido, diga claramente que não encontrou dados e sugira perguntas parecidas. Nunca preencha lacunas com dados ilustrativos ou inventados.
 
-7. Não cite URLs no texto; use apenas "Sigla Número/Ano" (cada citação aparece automaticamente como botão). Responda apenas em português brasileiro, com frases curtas."""
+7. Não cite URLs no texto; use apenas "Sigla Número/Ano" (cada citação aparece automaticamente como botão). Responda apenas em português brasileiro, com frases curtas.
+
+8. O histórico abaixo contém perguntas e respostas anteriores da mesma conversa. Use-o só para entender referências como "essas proposições", "os projetos citados", "e o autor?". Perguntas de contexto (pergunta atual) têm prioridade sobre o histórico; nunca invente dados que não estejam no contexto ou no histórico."""
+
+
+def _mensagens(sistema: str, pergunta: str, historico: list[dict] | None) -> list[dict]:
+    """mensagens para a llm: sistema, último histórico válido e a pergunta atual."""
+    mensagens = [{"role": "system", "content": sistema}]
+    turnos = {"usuario": "user", "assistente": "assistant"}
+    for item in (historico or [])[-8:]:
+        papel = (item.get("papel") or "").strip()
+        conteudo = (item.get("conteudo") or "").strip()
+        if papel not in turnos or not conteudo:
+            continue
+        mensagens.append({"role": turnos[papel], "content": conteudo})
+    mensagens.append({"role": "user", "content": pergunta})
+    return mensagens
 
 
 def _extrair_filtros(pergunta: str) -> dict:
@@ -242,7 +258,7 @@ def _voto_leigo(voto: str | None) -> str:
     }.get(voto, (voto if voto else "não informado"))
 
 
-def _executar_votacao(inten: dict) -> dict | None:
+def _executar_votacao(inten: dict, historico: list[dict] | None = None) -> dict | None:
     prop = _achar_proposicao(inten["sigla"], inten["numero"], inten.get("ano"))
     if not prop:
         return None
@@ -322,11 +338,11 @@ def _executar_votacao(inten: dict) -> dict | None:
     if v.get("url"):
         fontes.append({"titulo": f"Registro da votação ({v.get('data') or ''})", "url": v["url"],
                        "tipo": "VOTAÇÃO", "data": v.get("data") or "", "ano": None, "score": None})
-    resposta = _redigir_intencao(inten.get("_pergunta", rotulo), dados, "\n".join(partes))
+    resposta = _redigir_intencao(inten.get("_pergunta", rotulo), dados, "\n".join(partes), historico)
     return {"resposta": resposta, "fontes": fontes}
 
 
-def _executar_proposicao(inten: dict) -> dict | None:
+def _executar_proposicao(inten: dict, historico: list[dict] | None = None) -> dict | None:
     prop = _achar_proposicao(inten["sigla"], inten["numero"], inten.get("ano"))
     if not prop:
         return None
@@ -363,24 +379,22 @@ def _executar_proposicao(inten: dict) -> dict | None:
         "regime": d.get("regime"),
         "orgao": d.get("orgao"),
     }
-    resposta = _redigir_intencao(inten.get("_pergunta", rotulo), dados, "\n".join(partes))
+    resposta = _redigir_intencao(inten.get("_pergunta", rotulo), dados, "\n".join(partes), historico)
     fonte = [{"titulo": rotulo, "url": prop.get("url"), "tipo": inten["sigla"],
               "data": (prop.get("dataApresentacao") or "")[:10], "ano": prop.get("ano"), "score": None}]
     return {"resposta": resposta, "fontes": fonte}
 
 
-def _redigir_intencao(pergunta: str, dados: dict, fallback: str) -> str:
+def _redigir_intencao(pergunta: str, dados: dict, fallback: str,
+                      historico: list[dict] | None = None) -> str:
     """se a llm estiver disponível, redige a partir dos dados oficiais; senão usa o template."""
     if not config.tem_chaves:
         return fallback
-    mensagens = [
-        {"role": "system", "content": _SISTEMA},
-        {"role": "user", "content": (
-            f"Pergunta:\n{pergunta}\n\nDADOS OFICIAIS (JSON, use somente estes dados):\n"
-            f"{json.dumps(dados, ensure_ascii=False)}\n"
-            "Responda em linguagem simples, sem inventar nada que não esteja nos dados."
-        )},
-    ]
+    mensagens = _mensagens(_SISTEMA, (
+        f"Pergunta:\n{pergunta}\n\nDADOS OFICIAIS (JSON, use somente estes dados):\n"
+        f"{json.dumps(dados, ensure_ascii=False)}\n"
+        "Responda em linguagem simples, sem inventar nada que não esteja nos dados."
+    ), historico)
     try:
         msg = lm.completar(mensagens, tools=None)
         conteudo = (msg.get("content") or "").strip()
@@ -490,17 +504,15 @@ def _buscar_api(pergunta: str, filtros: dict) -> list[dict]:
     return docs[: config.rag_top_k]
 
 
-def _redigir(pergunta: str, docs: list[dict]) -> str:
+def _redigir(pergunta: str, docs: list[dict],
+             historico: list[dict] | None = None) -> str:
     """LLM redige a partir do contexto; sem llm ou em falha, resposta determinística."""
     if not docs:
         return formato_simples(docs)
     if not config.tem_chaves:
         return formato_simples(docs)
     contexto = "\n\n".join(f"{i}. {d['doc']}" for i, d in enumerate(docs, 1))
-    mensagens = [
-        {"role": "system", "content": _SISTEMA},
-        {"role": "user", "content": f"Pergunta:\n{pergunta}\n\nCONTEXTO (dados oficiais da Câmara):\n{contexto}"},
-    ]
+    mensagens = _mensagens(_SISTEMA, f"Pergunta:\n{pergunta}\n\nCONTEXTO (dados oficiais da Câmara):\n{contexto}", historico)
     try:
         msg = lm.completar(mensagens, tools=None)
         conteudo = (msg.get("content") or "").strip()
@@ -511,7 +523,7 @@ def _redigir(pergunta: str, docs: list[dict]) -> str:
 
 # ---- porta de entrada -------------------------------------------------------
 
-def responder(pergunta: str) -> dict:
+def responder(pergunta: str, historico: list[dict] | None = None) -> dict:
     pergunta = (pergunta or "").strip()
     if not pergunta:
         return {"resposta": "Não consegui processar essa consulta.", "fontes": [],
@@ -523,9 +535,9 @@ def responder(pergunta: str) -> dict:
     if inten:
         inten["_pergunta"] = pergunta
         if inten["tipo"] == "votacao":
-            out = _executar_votacao(inten)
+            out = _executar_votacao(inten, historico)
         else:
-            out = _executar_proposicao(inten)
+            out = _executar_proposicao(inten, historico)
         if out:
             return {**out, "raciocinio": "", "aviso": None}
 
@@ -543,5 +555,5 @@ def responder(pergunta: str) -> dict:
 
     docs = _recuperar(pergunta, filtros)
     fontes = [para_fonte(d, d.get("score")) for d in docs]
-    return {"resposta": _redigir(pergunta, docs), "fontes": fontes,
+    return {"resposta": _redigir(pergunta, docs, historico), "fontes": fontes,
             "raciocinio": "", "aviso": None, "ano_vigente": ano_vigente}

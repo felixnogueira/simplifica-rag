@@ -96,14 +96,14 @@ class LmClient:
         if tools:
             base_payload["tools"] = tools
         providers = [
-            (f"{config.ollama_url}/chat/completions",
-             "ollama-local" if config.ollama_url else "",
-             dict(base_payload, model=config.ollama_chat_model),
-             "basic"),
             (f"{config.workers_ai_url}/v1/chat/completions",
              "workers-ai-local" if config.workers_ai_url else "",
              dict(base_payload, model=config.workers_ai_model),
              "bearer"),
+            (f"{config.ollama_url}/chat/completions",
+             "ollama-local" if config.ollama_url else "",
+             dict(base_payload, model=config.ollama_chat_model),
+             "basic"),
             (f"{self.zen_base}/chat/completions", self._apikey_zen(),
              dict(base_payload, model=config.opencode_chat_model),
              "bearer"),

@@ -131,7 +131,7 @@ def chat(payload: dict):
     if not pergunta:
         return _erro("pergunta vazia", 400)
     try:
-        out = agente.responder(pergunta)
+        out = agente.responder(pergunta, historico=payload.get("historico") or [])
         return {
             "resposta": out["resposta"],
             "fontes": out["fontes"],
