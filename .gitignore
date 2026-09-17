@@ -7,3 +7,5 @@ dump/
 dados/
 .vercel
 .env*
+
+.DS_Store
