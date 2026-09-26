@@ -11,7 +11,7 @@ import json
 import re
 from datetime import date
 
-from . import agregacao, camara, rag
+from . import agregacao, camara, processo, rag
 from .config import config
 from .documento import formato_simples, montar_doc, para_fonte
 from .llm import LlmError, lm
@@ -71,7 +71,7 @@ REGRAS OBRIGATÓRIAS (nunca as quebre):
 
 5. Quando houver muitas proposições no contexto, agrupe por tema e apresente as mais representativas (cerca de 6 a 10), cada uma com descrição curta: "Sigla Número/Ano — o que propõe (Autor)". Sinalize limites quando o total real for maior que o listado.
 
-6. Se o contexto não contiver o que foi pedido, diga claramente que não encontrou dados e sugira perguntas parecidas. Nunca preencha lacunas com dados ilustrativos ou inventados.
+6. Se o contexto não contiver o que foi pedido, diga claramente que não encontrou esses dados nos registros consultados. NUNCA invente perguntas sugeridas, siglas, números, autores, votos nem dados ilustrativos — se não há dados, não há o que sugerir. Pode apenas lembrar do que este assistente consulta (uma proposição específica, um autor, uma votação). O guia do processo legislativo, quando presente no contexto, responde perguntas gerais sobre tramitação.
 
 7. Não cite URLs no texto; use apenas "Sigla Número/Ano" (cada citação aparece automaticamente como botão). Responda apenas em português brasileiro, com frases curtas.
 
@@ -521,6 +521,26 @@ def _redigir(pergunta: str, docs: list[dict],
         return formato_simples(docs)
 
 
+def _redigir_processo(pergunta: str, historico: list[dict] | None = None) -> dict:
+    """responde perguntas gerais de processo legislativo com o guia oficial (determinístico
+    sem llm; com llm, a redação é feita a partir do guia e a fonte é a própria página)."""
+    fonte = [dict(processo.FONTE)]
+    if not config.tem_chaves:
+        return {"resposta": processo.explicacao_simples(), "fontes": fonte}
+    mensagens = _mensagens(
+        _SISTEMA,
+        f"Pergunta:\n{pergunta}\n\nCONTEXTO (guia oficial do processo legislativo da Câmara dos Deputados):\n{processo.guia()}",
+        historico,
+    )
+    try:
+        msg = lm.completar(mensagens, tools=None)
+        conteudo = (msg.get("content") or "").strip()
+        resposta = conteudo or processo.explicacao_simples()
+    except LlmError:
+        resposta = processo.explicacao_simples()
+    return {"resposta": resposta, "fontes": fonte}
+
+
 # ---- porta de entrada -------------------------------------------------------
 
 def responder(pergunta: str, historico: list[dict] | None = None) -> dict:
@@ -540,6 +560,9 @@ def responder(pergunta: str, historico: list[dict] | None = None) -> dict:
             out = _executar_proposicao(inten, historico)
         if out:
             return {**out, "raciocinio": "", "aviso": None}
+
+    if not _menção_proposicao(pergunta) and processo.detectar(pergunta):
+        return {**_redigir_processo(pergunta, historico), "raciocinio": "", "aviso": None}
 
     autor = _nome_autor(pergunta)
     if autor:
