@@ -54,7 +54,7 @@ _PARTIDOS = {
 
 _SIGLAS_TIPO = [
     "PEC", "MPV", "PDL", "PLP", "PLS", "PL", "REQ", "PRC", "EMC", "RCP",
-    "REC", "INC", "SUB", "OF", "RIC", "MSC", "PDC",
+    "REC", "INC", "SUB", "OF", "RIC", "MSC", "PDC", "PAR", "SBT",
 ]
 
 _SISTEMA = """Você é o Simplifica Legislativo, um assistente que explica dados oficiais da Câmara dos Deputados em linguagem simples, em português brasileiro, para pessoas leigas.
@@ -62,6 +62,8 @@ _SISTEMA = """Você é o Simplifica Legislativo, um assistente que explica dados
 REGRAS OBRIGATÓRIAS (nunca as quebre):
 
 1. Responda APENAS com base nos DADOS OFICIAIS fornecidos no contexto. Nunca cite, descreva ou invente proposição, número, autor, voto ou número de projeto que não esteja no contexto.
+
+1b. Tipos auxiliares (PAR — parecer, EMC — emenda, SUB — substitutivo, SBT) reutilizam o número entre comissões/projetos. Ao citar uma delas, identifique pela comissão ou pelo projeto a que se refere, ex.: "PAR 1/2024 — parecer da Comissão de Educação ao PL 2031/2023". Nunca apresente só "PAR 1/2024" quando o contexto trouxer mais de uma com o mesmo número.
 
 2. Cada proposição citada deve vir acompanhada de uma descrição curta e simples do que propõe (com base na ementa). Formato: "PL 42/2026 — inclui a vacina contra Herpes Zoster no PNI".
 
@@ -149,17 +151,22 @@ _INTENT_VOTOS_RECENTES = re.compile(
     re.I,
 )
 _VERBOS_PROPOSTA = re.compile(
-    r"o que é|o que e|o que qr|o que diz|conte|me fale|fala sobre|detalhe|explica"
-    r"|situação|situacao|status|andamento|tramitação|tramitacao"
+    r"o que é|o que e|o que qr|o que diz|conte|me fale|fala sobre|detalhe|explica|contexto|"
+    r"detalhes|fala mais|me explica|"
+    r"situação|situacao|status|andamento|tramitação|tramitacao"
     r"|foi aprovad|foi rejeitad|foi sancionad|foi arquivad|foi retirad|foi votad"
     r"|vai virar|viro|passou|pra onde foi|foi para|foi pra",
     re.I,
 )
 _MENCAO_PROP = re.compile(
-    r"\b(PEC|MPV|PDL|PLP|PLS|PL|REQ|PRC|EMC|RCP|REC|INC|SUB|OF|RIC|MSC|PDC)"
+    r"\b(PEC|MPV|PDL|PLP|PLS|PL|REQ|PRC|EMC|RCP|REC|INC|SUB|OF|RIC|MSC|PDC|PAR|SBT)"
     r"\s*(\d{1,6})(?:\s*/\s*(\d{4}))?\b",
     re.I,
 )
+
+# tipos cujo número é reutilizado por várias proposições (pareceres de comissões
+# distintas, emendas, complementações...): o rótulo "Sigla Nº/Ano" não é único.
+_AMBIGUAS = {"PAR", "EMC", "SUB", "SBT"}
 
 
 def _menção_proposicao(pergunta: str) -> tuple[str, int, int | None] | None:
@@ -235,20 +242,64 @@ def _rotulo_proposta(sigla: str, numero: int, ano: int | None) -> str:
     return f"{sigla} {numero}/{ano}" if ano else f"{sigla} {numero}"
 
 
-def _achar_proposicao(sigla: str, numero: int, ano: int | None) -> dict | None:
+def _candidatos_proposicao(sigla: str, numero: int, ano: int | None) -> list[dict]:
+    """todos os resumos que casam com sigla/número/ano (pode haver vários)."""
     try:
-        resumos = camara.proposicoes(sigla_tipo=sigla, numero=numero, ano=ano, itens=20)
+        resumos = camara.proposicoes(sigla_tipo=sigla, numero=numero, ano=ano, itens=50)
     except camara.CamaraError:
-        return None
+        return []
     if not resumos and ano:
         try:
-            resumos = camara.proposicoes(sigla_tipo=sigla, numero=numero, itens=20)
+            resumos = camara.proposicoes(sigla_tipo=sigla, numero=numero, itens=50)
         except camara.CamaraError:
             resumos = []
-    if not resumos:
-        return None
     resumos.sort(key=lambda r: r.get("dataApresentacao") or "", reverse=True)
-    return resumos[0]
+    return resumos
+
+
+def _achar_proposicao(sigla: str, numero: int, ano: int | None) -> dict | None:
+    resumos = _candidatos_proposicao(sigla, numero, ano)
+    return resumos[0] if resumos else None
+
+
+def _resposta_ambigua(sigla: str, numero: int, ano: int | None,
+                      cands: list[dict]) -> dict:
+    """vários documentos compartilham o mesmo rótulo (ex.: PAR 1/2024 de comissões
+    diferentes); não se inventa qual é — lista-se e pede-se a escolha."""
+    rotulo = _rotulo_proposta(sigla, numero, ano)
+    linhas = [
+        f"Encontrei {len(cands)} proposições com o identificador {rotulo} na base da "
+        "Câmara. Esse documento é reutilizado — por exemplo, pareceres de comissões "
+        "diferentes — e o identificador único de cada um está na ficha de tramitação. "
+        "Veja as principais:",
+        "",
+    ]
+    fontes = []
+    sel = cands if len(cands) <= 5 else cands[:4] + [{"__mais": True}]
+    for i, c in enumerate(sel, 1):
+        if c.get("__mais"):
+            linhas.append(f"{i}. {rotulo} — e outras {len(cands) - 4} variações.")
+            continue
+        ementa = (c.get("ementa") or "").strip()
+        data = (c.get("dataApresentacao") or "")[:10]
+        pid = c.get("id")
+        url = c.get("url") or (camara.url_ficha(pid) if pid else "")
+        texto = f"{i}. {rotulo}"
+        if data:
+            texto += f" — apresentada em {data}"
+        if ementa:
+            texto += f": {ementa[:180]}{'…' if len(ementa) > 180 else ''}"
+        linhas.append(texto)
+        fontes.append({
+            "titulo": rotulo + (f" — {ementa[:60]}" if ementa else ""),
+            "url": url, "tipo": sigla, "data": data, "ano": ano, "score": None,
+        })
+    linhas.extend([
+        "",
+        "Qual delas você quer entender? Diga o autor ou o projeto a que se refere, "
+        "ou abra a ficha de tramitação pelo botão de referência.",
+    ])
+    return {"resposta": "\n".join(linhas), "fontes": fontes}
 
 
 def _voto_leigo(voto: str | None) -> str:
@@ -343,10 +394,16 @@ def _executar_votacao(inten: dict, historico: list[dict] | None = None) -> dict 
 
 
 def _executar_proposicao(inten: dict, historico: list[dict] | None = None) -> dict | None:
-    prop = _achar_proposicao(inten["sigla"], inten["numero"], inten.get("ano"))
-    if not prop:
+    sigla = inten["sigla"]
+    numero = inten["numero"]
+    ano = inten.get("ano")
+    cands = _candidatos_proposicao(sigla, numero, ano)
+    if not cands:
         return None
-    rotulo = _rotulo_proposta(inten["sigla"], inten["numero"], inten.get("ano") or prop.get("ano"))
+    if sigla in _AMBIGUAS and len(cands) > 1:
+        return _resposta_ambigua(sigla, numero, ano, cands)
+    prop = cands[0]
+    rotulo = _rotulo_proposta(sigla, numero, ano or prop.get("ano"))
     try:
         d = camara.proposicao(prop["id"])
     except camara.CamaraError:
